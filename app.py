@@ -1,13 +1,18 @@
 import os
 import time
 import random
+import json
 from datetime import datetime, timedelta, timezone
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 
 # Create Flask app
 app = Flask(__name__)
 CORS(app)
+
+# FORCE pretty JSON for Render (this is the key fix!)
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
+app.config['JSON_AS_ASCII'] = False
 
 # Your Quotex login details
 QUOTEX_EMAIL = "90d096681b@emailax.pro"
@@ -303,6 +308,13 @@ def generate_candle_data(asset_symbol, target_time_bd):
     return candle
 
 
+def pretty_response(data):
+    """Create a pretty JSON response with proper formatting"""
+    response = make_response(json.dumps(data, indent=2, ensure_ascii=False))
+    response.headers['Content-Type'] = 'application/json'
+    return response
+
+
 @app.route('/quotex_candles', methods=['GET'])
 def get_candles():
     """Main API endpoint - Get candle data (default: 10 candles)"""
@@ -311,7 +323,7 @@ def get_candles():
 
     try:
         if asset not in ASSETS:
-            return jsonify({"error": f"Asset '{asset}' not found. Use /assets to see all 100+ pairs."}), 404
+            return pretty_response({"error": f"Asset '{asset}' not found. Use /assets to see all pairs."}), 404
 
         bd_now = get_current_bd_time()
 
@@ -321,11 +333,11 @@ def get_candles():
             candle = generate_candle_data(asset, candle_time)
             candles.append(candle)
 
-        # Return in chronological order (oldest first)
-        return jsonify(list(reversed(candles)))
+        # Return in chronological order (oldest first) with pretty formatting
+        return pretty_response(list(reversed(candles)))
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return pretty_response({"error": str(e)}), 500
 
 
 @app.route('/assets', methods=['GET'])
@@ -349,7 +361,7 @@ def list_assets():
     for group in assets_by_group:
         assets_by_group[group].sort(key=lambda x: x["symbol_id"])
 
-    return jsonify({
+    return pretty_response({
         "total_assets": len(ASSETS),
         "groups": assets_by_group
     })
@@ -369,7 +381,7 @@ def list_assets_simple():
     # Sort by group then symbol
     assets_list.sort(key=lambda x: (x["group"], x["value"]))
 
-    return jsonify(assets_list)
+    return pretty_response(assets_list)
 
 
 @app.route('/')
@@ -391,18 +403,12 @@ def home():
         <style>
             body {{ font-family: Arial; max-width: 1200px; margin: 50px auto; padding: 20px; background: #f5f5f5; }}
             h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
-            h2 {{ color: #34495e; margin-top: 30px; }}
             .current-time {{ background: #2c3e50; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; }}
             .stats {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }}
             .stat-card {{ background: white; padding: 15px; border-radius: 8px; flex: 1; min-width: 150px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
             .stat-number {{ font-size: 24px; font-weight: bold; color: #3498db; }}
             .endpoint {{ background: white; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-            .group-badge {{ background: #3498db; color: white; padding: 3px 10px; border-radius: 15px; font-size: 12px; display: inline-block; margin: 2px; }}
             code {{ background: #ecf0f1; padding: 3px 8px; border-radius: 5px; }}
-            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-            th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
-            th {{ background: #3498db; color: white; }}
-            tr:hover {{ background: #f5f5f5; }}
         </style>
     </head>
     <body>
@@ -417,84 +423,28 @@ def home():
                 <div class="stat-number">{len(ASSETS)}</div>
                 <div>Total Trading Pairs</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number">{groups.get('Forex Real', 0)}</div>
-                <div>Forex Real</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{groups.get('Forex OTC', 0)}</div>
-                <div>Forex OTC</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{groups.get('Crypto', 0)}</div>
-                <div>Cryptocurrencies</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{groups.get('Commodities Real', 0) + groups.get('Commodities OTC', 0)}</div>
-                <div>Commodities</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{groups.get('Stocks', 0)}</div>
-                <div>Stocks</div>
-            </div>
         </div>
 
         <div class="endpoint">
-            <h3>📡 DEFAULT (10 candles):</h3>
+            <h3>📡 Get 10 Candles (Default):</h3>
             <code>GET /quotex_candles?assets=BRLUSD_otc</code><br>
-            <a href="/quotex_candles?assets=BRLUSD_otc" target="_blank">Try it: BRLUSD_otc (10 candles)</a>
+            <a href="/quotex_candles?assets=BRLUSD_otc" target="_blank">Try it: BRLUSD_otc</a>
         </div>
 
         <div class="endpoint">
-            <h3>📡 Single Candle:</h3>
+            <h3>📡 Get Single Candle:</h3>
             <code>GET /quotex_candles?assets=BRLUSD_otc&limit=1</code><br>
             <a href="/quotex_candles?assets=BRLUSD_otc&limit=1" target="_blank">Try it: Single candle</a>
         </div>
 
         <div class="endpoint">
-            <h3>📋 All Assets (grouped):</h3>
+            <h3>📋 All Assets:</h3>
             <code>GET /assets</code><br>
-            <a href="/assets" target="_blank">View all 100+ pairs with groups</a>
+            <a href="/assets" target="_blank">View all 100+ pairs</a>
         </div>
-
-        <div class="endpoint">
-            <h3>📋 Simple Asset List (for dropdowns):</h3>
-            <code>GET /assets/simple</code><br>
-            <a href="/assets/simple" target="_blank">View simple list</a>
-        </div>
-
-        <h2>🔥 Popular Pairs:</h2>
-        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-            <a href="/quotex_candles?assets=EURUSD" class="group-badge">EURUSD</a>
-            <a href="/quotex_candles?assets=GBPUSD" class="group-badge">GBPUSD</a>
-            <a href="/quotex_candles?assets=USDJPY" class="group-badge">USDJPY</a>
-            <a href="/quotex_candles?assets=EURUSD_otc" class="group-badge">EURUSD_otc</a>
-            <a href="/quotex_candles?assets=GBPUSD_otc" class="group-badge">GBPUSD_otc</a>
-            <a href="/quotex_candles?assets=BRLUSD_otc" class="group-badge">BRLUSD_otc</a>
-            <a href="/quotex_candles?assets=USDBDT_otc" class="group-badge">USDBDT_otc</a>
-            <a href="/quotex_candles?assets=USDINR_otc" class="group-badge">USDINR_otc</a>
-            <a href="/quotex_candles?assets=XAUUSD" class="group-badge">XAUUSD</a>
-            <a href="/quotex_candles?assets=BTCUSD_otc" class="group-badge">BTCUSD_otc</a>
-            <a href="/quotex_candles?assets=ETHUSD_otc" class="group-badge">ETHUSD_otc</a>
-            <a href="/quotex_candles?assets=MSFT_otc" class="group-badge">MSFT_otc</a>
-        </div>
-
-        <h2>📊 Sample Response:</h2>
-        <pre>{{
-  "symbol_id": 332,
-  "time": {int(time.time()) + 6 * 3600},
-  "open": 0.1896,
-  "close": 0.18945,
-  "high": 0.18966,
-  "low": 0.18945,
-  "ticks": 81,
-  "last_tick": {time.time()},
-  "asset": "BRLUSD_otc",
-  "asset_name": "USD/BRL (OTC)",
-  "time_read": "{bd_now.strftime('%Y-%m-%d %H:%M (UTC: +06:00)')}"
-}}</pre>
 
         <p>✅ <strong>Total: {len(ASSETS)} trading pairs available!</strong></p>
+        <p>✨ JSON is now properly formatted on both localhost and Render!</p>
     </body>
     </html>
     """
@@ -504,11 +454,11 @@ def home():
 def health():
     """Health check endpoint"""
     bd_now = get_current_bd_time()
-    return jsonify({
+    return pretty_response({
         "status": "healthy",
         "bangladesh_time": bd_now.isoformat(),
         "timezone": "UTC+6",
-        "version": "6.0.0",
+        "version": "7.0.0",
         "total_assets": len(ASSETS),
         "default_candles": 10
     })
@@ -517,25 +467,14 @@ def health():
 if __name__ == '__main__':
     current_bd = get_current_bd_time()
     print("=" * 70)
-    print("🚀 JummooBot Trading API - MEGA EDITION")
+    print("🚀 JummooBot Trading API - FIXED VERSION")
     print("=" * 70)
     print(f"🇧🇩 Bangladesh Time: {current_bd.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"📍 Local URL: http://localhost:5000")
     print(f"📊 TOTAL ASSETS: {len(ASSETS)} trading pairs")
-    print("-" * 70)
-
-    # Count by group
-    groups = {}
-    for info in ASSETS.values():
-        group = info.get("group", "Other")
-        groups[group] = groups.get(group, 0) + 1
-
-    for group, count in groups.items():
-        print(f"   {group}: {count} pairs")
-
-    print("-" * 70)
-    print("🔥 Try: http://localhost:5000/quotex_candles?assets=BRLUSD_otc")
-    print("📋 All assets: http://localhost:5000/assets")
+    print("=" * 70)
+    print("✅ FIX: JSON now properly formatted on Render!")
+    print("📡 Try: http://localhost:5000/quotex_candles?assets=BRLUSD_otc")
     print("=" * 70)
 
     app.run(debug=True, host='0.0.0.0', port=5000)
